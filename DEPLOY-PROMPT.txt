@@ -1,0 +1,27 @@
+我有一个已经打包好的纯前端项目，请帮我部署上线。
+
+## 项目信息
+- 产品名：线索雷达（AI 自动获客演示平台）
+- 技术栈：React 18 + Vite 5，纯前端 SPA，无后端、无数据库、无登录、无真实 API
+- 交付物：附件 lead-radar-dist.zip（122 KB，18 个文件）
+- zip 内容：完整源码（src/）、已构建好的生产产物（dist/）、部署说明（DEPLOY.md）、package.json / vite-lock / vite.config.js
+
+## 部署要求
+1. 先解压 zip，并阅读根目录下的 DEPLOY.md（里面有完整部署文档）
+2. 优先使用 zip 里现成的 dist/ 目录做静态托管，不需要重新构建；如果你判断有必要重建，可在 Node ≥ 18 环境执行 npm install && npm run build（Windows 环境若报 esbuild 平台包缺失，补装 npm install @esbuild/win32-x64 --no-save）
+3. 部署方式由你选择（服务器 Nginx / Vercel / Netlify / Cloudflare Pages 等任一静态托管方案均可），但要保证：
+   - 访问域名根路径能打开 index.html
+   - 配置 SPA 回退（try_files $uri /index.html 或等效设置）
+   - 开启 HTTP(S)，能通过公网链接访问
+4. 字体使用 Google Fonts CDN（DM Sans + Noto Sans SC），部署环境需允许访问 fonts.googleapis.com；若无法访问会自动回退系统字体，不影响功能，不要为此改代码
+
+## 部署完成后自查（来自 DEPLOY.md 的校验清单）
+1. 首页为深色大首屏，主标题是「自动获客 / AI 获客 / 让客户主动出现」
+2. 顶部导航 5 个页面可切换：首页 / AI 交代任务 / 工作台 / 采集数据 / 意向客户
+3. 「AI 交代任务」页输入任务 → 生成任务 → 开始采集，会弹出约 980px 宽的采集动画弹窗（四阶段约 22 秒，不自动关闭，需手动点「关闭窗口」）
+4. 「意向客户」页有 372 条数据，行业 / 平台 / 意向 / 搜索筛选正常，点击任意一行会打开右侧详情抽屉
+5. 手机宽度（≤640px）下布局自适应正常
+
+## 输出要求
+- 部署完成后，把最终可访问的线上地址发给我
+- 如遇报错或缺少信息（例如需要服务器 SSH、平台账号授权），先告诉我具体缺什么、需要我做什么，不要自行臆造配置
