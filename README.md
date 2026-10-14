@@ -6,7 +6,9 @@
 
 ## 在线预览
 
-GitHub Pages：<https://OWNER.github.io/lead-radar/>（仓库 push 后由 GitHub Actions 自动构建发布）
+GitHub Pages：**<https://wenku365-sudo.github.io/lead-radar/>**
+
+推送到 `main` 分支后由 GitHub Actions 自动构建发布（约 40 秒生效）。
 
 ## 页面
 
