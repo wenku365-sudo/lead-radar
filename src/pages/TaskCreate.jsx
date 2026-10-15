@@ -11,7 +11,7 @@ const EXAMPLES = [
 ]
 
 export default function TaskCreate() {
-  const { openCollect, addTask, go } = useApp()
+  const { openCollect, addTask, go, demoTask } = useApp()
   const [input, setInput] = useState('')
   const [msgs, setMsgs] = useState([
     {
@@ -27,8 +27,18 @@ export default function TaskCreate() {
     bodyRef.current?.scrollTo({ top: bodyRef.current.scrollHeight, behavior: 'smooth' })
   }, [msgs, thinking, result])
 
-  const generate = () => {
-    const text = input.trim()
+  // 演讲模式：收到演示指令后自动填入任务并触发生成
+  useEffect(() => {
+    if (!demoTask) return
+    setInput(demoTask.text)
+    const t = setTimeout(() => generate(demoTask.text), 1100)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [demoTask])
+
+  // override 传入字符串时用于演讲模式自动演示；作为 onClick 直接绑定时会收到事件对象，需过滤
+  const generate = (override) => {
+    const text = (typeof override === 'string' ? override : input).trim()
     if (!text) return
     setMsgs((m) => [...m, { role: 'user', text }])
     setThinking(true)

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
-import { INDUSTRIES, splitKeywords, levelName, makeLiveCustomer } from '../data/mock.js'
+import { INDUSTRIES, splitKeywords, levelName, makeLiveCustomer, generateReplies } from '../data/mock.js'
 
 function KwText({ text }) {
   return (
@@ -49,6 +49,17 @@ export default function Customers() {
   const [sessionNew, setSessionNew] = useState(0) // 本次停留新增
   const [toast, setToast] = useState(null)        // 右下角浮动提示
   const [lastAt, setLastAt] = useState(null)
+  const [copied, setCopied] = useState(null)
+
+  const copyText = (text, key) => {
+    try {
+      navigator.clipboard?.writeText(text)
+    } catch (e) {
+      /* 演示环境可能无剪贴板权限，忽略 */
+    }
+    setCopied(key)
+    setTimeout(() => setCopied(null), 1600)
+  }
 
   // 用 ref 持有最新筛选条件，避免定时器被反复重建
   const cfg = useRef({})
@@ -345,6 +356,24 @@ export default function Customers() {
                     </div>
                   </div>
                 </div>
+              </div>
+              <div className="d-section">
+                <div className="ds-t">✨ AI 推荐回复</div>
+                <div className="d-reply-hint">
+                  根据「{selected.industry}」与该条评论命中的购买信号自动生成
+                </div>
+                {generateReplies(selected).map((r) => (
+                  <div className="reply-card" key={r.key}>
+                    <div className="rc-head">
+                      <span className="rc-label">{r.label}</span>
+                      <span className="rc-tone">{r.tone}</span>
+                      <button className="rc-copy" onClick={() => copyText(r.text, selected.id + r.key)}>
+                        {copied === selected.id + r.key ? '✓ 已复制' : '复制'}
+                      </button>
+                    </div>
+                    <div className="rc-text">{r.text}</div>
+                  </div>
+                ))}
               </div>
             </div>
 

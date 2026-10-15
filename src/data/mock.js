@@ -705,3 +705,65 @@ export function understandTask(input) {
     customers: ind.count + Math.floor(Math.random() * 20)
   }
 }
+
+/* ==================== AI 推荐回复话术 ==================== */
+const REPLY_LIB = {
+  furniture: { biz: '全屋定制', unit: '投影面积', offer: '免费上门量房并出 3D 效果图', place: '线下体验馆', rep: '设计师' },
+  coding: { biz: '少儿编程课程', unit: '课时', offer: '一节免费试听课', place: '校区', rep: '课程顾问' },
+  fitness: { biz: '私教减脂训练营', unit: '训练周期', offer: '免费体测加一节体验课', place: '门店', rep: '教练' },
+  decoration: { biz: '整装装修服务', unit: '建筑面积', offer: '免费量房并出具明细报价', place: '样板间', rep: '设计师' },
+  beauty: { biz: '医美项目', unit: '项目', offer: '免费面诊并定制方案', place: '机构门店', rep: '美学顾问' },
+  house: { biz: '二手房房源', unit: '套', offer: '专属房源清单并安排带看', place: '门店', rep: '经纪人' },
+  car: { biz: '二手车车源', unit: '台', offer: '免费评估加置换补贴', place: '二手车展厅', rep: '评估师' }
+}
+
+const KW_GROUPS = [
+  { name: 'price', kws: ['怎么收费', '收费', '价格', '多少钱'], s: '价格方面按{unit}计算，最近正好有活动，可以给您一个准确的报价。' },
+  { name: 'discount', kws: ['优惠'], s: '现在有{offer}，这个月名额还剩几个。' },
+  { name: 'recommend', kws: ['推荐', '适合'], s: '按您说的情况，我更推荐我们主推的{biz}，性价比最高。' },
+  { name: 'signup', kws: ['报名', '试听', '预约'], s: '可以直接预约{offer}，我帮您把名额留出来。' },
+  { name: 'store', kws: ['门店', '校区'], s: '我们在您附近有{place}，随时可以过来实地看看。' },
+  { name: 'swap', kws: ['置换', '贷款'], s: '置换和贷款我们这边能一起办，流程我来帮您跑。' }
+]
+
+/**
+ * 根据客户所在行业与评论命中的关键词，生成 3 条不同风格的 AI 推荐回复
+ * @param {object} c 客户对象
+ * @returns {Array<{key:string,label:string,tone:string,text:string}>}
+ */
+export function generateReplies(c) {
+  const lib = REPLY_LIB[c.industryKey] || REPLY_LIB.furniture
+  const hit = KW_GROUPS.filter((g) => g.kws.some((k) => (c.comment || '').includes(k)))
+  const fill = (s) => s.replace(/\{(\w+)\}/g, (_, k) => lib[k] || '')
+  const core = hit.length ? hit.slice(0, 2).map((g) => fill(g.s)).join('') : fill('我们这边做{biz}，可以先安排{offer}，您对比看看。')
+  const tail = fill('方便的话留个联系方式，我让{rep}跟您对接细节。')
+
+  return [
+    {
+      key: 'pro',
+      label: '专业版',
+      tone: '信息完整 · 建立信任',
+      text: `您好，我们是做${lib.biz}的。${core}${tail}`
+    },
+    {
+      key: 'warm',
+      label: '亲切版',
+      tone: '降低距离感 · 易回复',
+      text: `看到您在问这个，正好我们就是做${lib.biz}的～${core}不着急决定，先了解清楚再说 🙂`
+    },
+    {
+      key: 'push',
+      label: '促单版',
+      tone: '制造紧迫 · 推动到店',
+      text: `您好！${core}现在是活动期，${lib.offer}，本周内到${lib.place}还能额外优惠。要不要我先帮您把名额留一下？`
+    }
+  ]
+}
+
+/* ==================== 跟进状态流转（供跟进工作台使用） ==================== */
+export const FOLLOW_STATUS = [
+  { key: 'todo', label: '待跟进', color: 'orange' },
+  { key: 'contacted', label: '已联系', color: 'blue' },
+  { key: 'visited', label: '已到店', color: 'purple' },
+  { key: 'deal', label: '已成交', color: 'green' }
+]
