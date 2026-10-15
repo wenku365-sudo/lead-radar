@@ -343,14 +343,8 @@ export default function CollectModal({ task, onClose }) {
           )}
         </div>
 
-        {/* 底部操作 */}
-        {stage === 4 ? (
-          <div className="cm-done-actions">
-            <button className="btn btn-green btn-lg" onClick={onClose} style={{ minWidth: 220 }}>
-              ✓ 关闭窗口
-            </button>
-          </div>
-        ) : (
+        {/* 底部提示 */}
+        {stage < 4 && (
           <div style={{ padding: '0 24px 20px', textAlign: 'center', color: '#767d99', fontSize: 12.5 }}>
             采集进行中，请勿关闭窗口 · 采集完成后可手动关闭（预计还需 {Math.max(1, Math.ceil((T_STAGE4 - elapsed) / 1000))} 秒）
           </div>
