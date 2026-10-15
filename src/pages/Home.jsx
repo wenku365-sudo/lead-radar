@@ -611,10 +611,6 @@ export default function Home() {
         <div className="hero-orb hero-orb-2" />
         <div className="hero-inner">
           <div>
-            <div className="hero-badge">
-              <span className="pulse-dot" />
-              AI 自动获客 · 演示版
-            </div>
             <h1>
               <span className="accent">自动获客</span>
               <br />
