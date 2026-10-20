@@ -35,7 +35,7 @@ const SPEEDS = [
 ]
 
 export default function Customers() {
-  const { customers, markFollowed, markLater, addCustomer } = useApp()
+  const { customers, markFollowed, markLater, addCustomer, mode, onLive, getReplies } = useApp()
   const [ind, setInd] = useState('all')
   const [platform, setPlatform] = useState('all')
   const [level, setLevel] = useState('all')
@@ -50,6 +50,27 @@ export default function Customers() {
   const [toast, setToast] = useState(null)        // 右下角浮动提示
   const [lastAt, setLastAt] = useState(null)
   const [copied, setCopied] = useState(null)
+  const [replies, setReplies] = useState(null) // 抽屉话术：null=生成中
+
+  // 打开抽屉时加载 AI 推荐话术（在线模式可走大模型，失败回退本地模板）
+  useEffect(() => {
+    if (!selected) {
+      setReplies(null)
+      return
+    }
+    let cancelled = false
+    getReplies(selected)
+      .then((r) => {
+        if (!cancelled) setReplies(r)
+      })
+      .catch(() => {
+        if (!cancelled) setReplies(generateReplies(selected))
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selected])
 
   const copyText = (text, key) => {
     try {
@@ -66,7 +87,8 @@ export default function Customers() {
   cfg.current = { ind, platform, level, q, addCustomer }
 
   useEffect(() => {
-    if (!live) return
+    // 在线模式：数据流来自 WebSocket 真实推送，不走本地模拟定时器
+    if (mode === 'api' || !live) return
     const timer = setInterval(() => {
       const { ind: ci, platform: cp, level: cl, q: cq, addCustomer: add } = cfg.current
       const c = makeLiveCustomer({
@@ -91,7 +113,20 @@ export default function Customers() {
       setTimeout(() => setToast((t) => (t && t.id === c.id ? null : t)), toastMs)
     }, speed)
     return () => clearInterval(timer)
-  }, [live, speed])
+  }, [live, speed, mode])
+
+  // 在线模式：订阅 WebSocket 真实推送，复用同一套插入动效（列表插入由 App 层完成，这里只触发高亮/提示）
+  useEffect(() => {
+    if (mode !== 'api') return
+    return onLive((c) => {
+      setSessionNew((n) => n + 1)
+      setLastAt(new Date())
+      setFreshIds((f) => [...f, c.id])
+      setToast({ id: c.id, nick: c.nick, industry: c.industry, score: c.score, platform: c.platform })
+      setTimeout(() => setFreshIds((f) => f.filter((x) => x !== c.id)), 6000)
+      setTimeout(() => setToast((t) => (t && t.id === c.id ? null : t)), 3000)
+    })
+  }, [mode, onLive])
 
   const indCounts = useMemo(() => {
     const m = {}
@@ -164,18 +199,22 @@ export default function Customers() {
           </div>
         </div>
         <div className="live-ctrl">
-          {SPEEDS.map((s) => (
-            <button
-              key={s.v}
-              className={'spd-btn' + (speed === s.v ? ' on' : '')}
-              onClick={() => setSpeed(s.v)}
-            >
-              {s.label}
+          {mode !== 'api' &&
+            SPEEDS.map((s) => (
+              <button
+                key={s.v}
+                className={'spd-btn' + (speed === s.v ? ' on' : '')}
+                onClick={() => setSpeed(s.v)}
+              >
+                {s.label}
+              </button>
+            ))}
+          {mode !== 'api' && (
+            <button className="btn btn-sm" style={{ background: live ? '#fff' : 'var(--purple)', color: live ? 'var(--ink-2)' : '#fff', border: '1px solid var(--line)' }} onClick={() => setLive(!live)}>
+              {live ? '⏸ 暂停' : '▶ 继续采集'}
             </button>
-          ))}
-          <button className="btn btn-sm" style={{ background: live ? '#fff' : 'var(--purple)', color: live ? 'var(--ink-2)' : '#fff', border: '1px solid var(--line)' }} onClick={() => setLive(!live)}>
-            {live ? '⏸ 暂停' : '▶ 继续采集'}
-          </button>
+          )}
+          {mode === 'api' && <span className="live-ws">⚡ 后端采集服务运行中 · 数据实时推送</span>}
         </div>
       </div>
       <div className="live-scan-wrap">
@@ -362,7 +401,7 @@ export default function Customers() {
                 <div className="d-reply-hint">
                   根据「{selected.industry}」与该条评论命中的购买信号自动生成
                 </div>
-                {generateReplies(selected).map((r) => (
+                {(replies === null ? generateReplies(selected) : replies).map((r) => (
                   <div className="reply-card" key={r.key}>
                     <div className="rc-head">
                       <span className="rc-label">{r.label}</span>

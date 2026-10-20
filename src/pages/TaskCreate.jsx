@@ -1,6 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
-import { understandTask } from '../data/mock.js'
 
 const EXAMPLES = [
   '帮我找需要买家具的客户',
@@ -11,7 +10,7 @@ const EXAMPLES = [
 ]
 
 export default function TaskCreate() {
-  const { openCollect, addTask, go, demoTask } = useApp()
+  const { openCollect, addTask, go, demoTask, parseTask } = useApp()
   const [input, setInput] = useState('')
   const [msgs, setMsgs] = useState([
     {
@@ -37,15 +36,18 @@ export default function TaskCreate() {
   }, [demoTask])
 
   // override 传入字符串时用于演讲模式自动演示；作为 onClick 直接绑定时会收到事件对象，需过滤
-  const generate = (override) => {
+  const generate = async (override) => {
     const text = (typeof override === 'string' ? override : input).trim()
     if (!text) return
     setMsgs((m) => [...m, { role: 'user', text }])
     setThinking(true)
     setInput('')
-    setTimeout(() => {
-      const u = understandTask(text)
-      setThinking(false)
+    try {
+      // 在线模式走后端解析（可接大模型），演示模式本地规则；保底 1.6 秒思考动画
+      const [u] = await Promise.all([
+        parseTask(text),
+        new Promise((r) => setTimeout(r, 1600))
+      ])
       setResult(u)
       setMsgs((m) => [
         ...m,
@@ -54,10 +56,17 @@ export default function TaskCreate() {
           text: '收到！我已经理解了你的获客任务，拆解结果如下 👇'
         }
       ])
-    }, 1600)
+    } catch (e) {
+      setMsgs((m) => [
+        ...m,
+        { role: 'ai', text: `解析失败：${e.message}，请稍后重试，或切回演示模式体验。` }
+      ])
+    } finally {
+      setThinking(false)
+    }
   }
 
-  const startCollect = () => {
+  const startCollect = async () => {
     if (!result) return
     const task = {
       title: result.input,
@@ -70,8 +79,8 @@ export default function TaskCreate() {
       status: 'new',
       understanding: result
     }
-    addTask(task)
-    openCollect(task)
+    const created = await addTask(task)
+    openCollect(created || task)
   }
 
   return (

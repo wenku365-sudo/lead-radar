@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useApp } from '../App.jsx'
 import { INDUSTRIES, splitKeywords, levelName, generateReplies, FOLLOW_STATUS } from '../data/mock.js'
 
@@ -127,7 +127,6 @@ export default function Followup() {
         ) : (
           <div className="fu-priority">
             {priority.map((c) => {
-              const replies = generateReplies(c)
               const open = openId === c.id
               return (
                 <div className="fp-item" key={c.id}>
@@ -167,22 +166,7 @@ export default function Followup() {
                     </button>
                   </div>
 
-                  {open && (
-                    <div className="fp-replies">
-                      {replies.map((r) => (
-                        <div className="reply-card" key={r.key}>
-                          <div className="rc-head">
-                            <span className="rc-label">{r.label}</span>
-                            <span className="rc-tone">{r.tone}</span>
-                            <button className="rc-copy" onClick={() => copy(r.text, c.id + r.key)}>
-                              {copied === c.id + r.key ? '✓ 已复制' : '复制'}
-                            </button>
-                          </div>
-                          <div className="rc-text">{r.text}</div>
-                        </div>
-                      ))}
-                    </div>
-                  )}
+                  {open && <PriorityReplies c={c} copied={copied} copy={copy} />}
                 </div>
               )
             })}
@@ -297,6 +281,52 @@ export default function Followup() {
           <div className="fu-more">共 {list.length} 条，已展示前 60 条（可用上方筛选缩小范围）</div>
         )}
       </div>
+    </div>
+  )
+}
+
+/** 优先跟进卡片的话术区：在线模式走后端（可接大模型），失败回退本地模板 */
+function PriorityReplies({ c, copied, copy }) {
+  const { getReplies } = useApp()
+  const [replies, setReplies] = useState(null)
+
+  useEffect(() => {
+    let cancelled = false
+    setReplies(null)
+    getReplies(c)
+      .then((r) => {
+        if (!cancelled) setReplies(r)
+      })
+      .catch(() => {
+        if (!cancelled) setReplies(generateReplies(c))
+      })
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [c.id])
+
+  if (replies === null) {
+    return (
+      <div className="fp-replies" style={{ color: 'var(--gray)', fontSize: 13, padding: '4px 2px' }}>
+        AI 正在生成话术…
+      </div>
+    )
+  }
+  return (
+    <div className="fp-replies">
+      {replies.map((r) => (
+        <div className="reply-card" key={r.key}>
+          <div className="rc-head">
+            <span className="rc-label">{r.label}</span>
+            <span className="rc-tone">{r.tone}</span>
+            <button className="rc-copy" onClick={() => copy(r.text, c.id + r.key)}>
+              {copied === c.id + r.key ? '✓ 已复制' : '复制'}
+            </button>
+          </div>
+          <div className="rc-text">{r.text}</div>
+        </div>
+      ))}
     </div>
   )
 }
