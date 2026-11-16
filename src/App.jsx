@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useMemo, useState, useRef, useEffect } from 'react'
-import { generateCustomers, DEFAULT_TASKS, understandTask, generateReplies as rulesReplies } from './data/mock.js'
+import { generateCustomers, getIndustryCustomers, INITIAL_PER_INDUSTRY, DEFAULT_TASKS, understandTask, generateReplies as rulesReplies } from './data/mock.js'
 import { api, getToken, clearToken, wsConnect } from './api/client.js'
 import CollectModal from './components/CollectModal.jsx'
 import PresentMode from './components/PresentMode.jsx'
@@ -49,6 +49,8 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [authReady, setAuthReady] = useState(mode !== 'api') // 在线模式启动时校验既有 token
   const [collectTask, setCollectTask] = useState(null)
+  // 意向客户页待应用的行业筛选（采集完成后跳转时带上，页面消费后清空）
+  const [customerFocus, setCustomerFocus] = useState(null)
   // 演讲模式演示驱动：{ text, nonce }，AI 交代任务页监听后自动输入并生成
   const [demoTask, setDemoTask] = useState(null)
   // 演讲模式开关
@@ -162,7 +164,7 @@ export default function App() {
       setPresentOn,
       openCollect: (task) => {
         setCollectTask(task)
-        // 在线模式：真实触发一轮后端采集（22 秒动画期间 worker 同步在跑）
+        // 在线模式：触发一轮后端采集，worker 与弹窗动画独立运行
         if (mode === 'api' && task?.dbId) {
           api(`/api/tasks/${task.dbId}/run`, { method: 'POST' }).catch((e) =>
             console.warn('触发采集失败:', e.message)
@@ -170,6 +172,44 @@ export default function App() {
         }
       },
       closeCollect: () => setCollectTask(null),
+      // 采集完成后跳转：打开意向客户页并自动筛选到本次任务所属行业
+      customerFocus,
+      clearCustomerFocus: () => setCustomerFocus(null),
+      focusCustomers: (industryKey) => {
+        setCustomerFocus(industryKey || null)
+        setPage('customers')
+        try {
+          window.scrollTo({ top: 0, behavior: 'smooth' })
+        } catch (e) {
+          /* SSR / 无 window 环境忽略 */
+        }
+        if (!industryKey) return
+
+        const merge = (incoming) =>
+          setCustomers((prev) => {
+            const seen = new Set(prev.map((c) => c.id))
+            const add = incoming.filter((c) => !seen.has(c.id))
+            return add.length ? [...add, ...prev] : prev
+          })
+
+        if (mode === 'demo') {
+          // 动态行业首次创建任务时，列表里可能还没有该行业样本 → 先补前 20 条，
+          // 其余 50-100 条由意向客户页渐进载入（复用新线索插入动效）
+          setCustomers((prev) => {
+            if (prev.some((c) => c.industryKey === industryKey)) return prev
+            const first = getIndustryCustomers(industryKey).slice(0, INITIAL_PER_INDUSTRY)
+            return first.length ? [...first, ...prev] : prev
+          })
+        } else {
+          // 在线模式：真实采集可能刚刚落库，立即拉一次，稍后再补拉一次
+          const pull = () =>
+            api(`/api/leads?industry=${encodeURIComponent(industryKey)}&limit=500`)
+              .then((r) => merge(r.leads || []))
+              .catch(() => {})
+          pull()
+          setTimeout(pull, 8000)
+        }
+      },
       // AI 解析任务：在线模式走后端（可接 LLM），演示模式本地规则
       parseTask: (input) =>
         mode === 'api'
@@ -188,7 +228,12 @@ export default function App() {
           try {
             const r = await api('/api/tasks', {
               method: 'POST',
-              body: { input: task.title, desc: task.desc }
+              body: {
+                input: task.title,
+                desc: task.desc,
+                searchKeywords: task.searchKeywords || [],
+                matchWords: task.matchWords || []
+              }
             })
             setTasks((prev) => [r.task, ...prev])
             return r.task
@@ -247,7 +292,7 @@ export default function App() {
         })
       }
     }),
-    [customers, tasks, page, demoTask, presentOn, mode, user]
+    [customers, tasks, page, demoTask, presentOn, mode, user, customerFocus]
   )
 
   // 在线模式未登录 → 登录页；token 校验中 → 加载屏
@@ -262,7 +307,12 @@ export default function App() {
         </div>
       )
     }
-    return <Login />
+    // 登录页也需要上下文（login / backToDemo）
+    return (
+      <AppContext.Provider value={{ login, backToDemo: () => setMode('demo'), mode }}>
+        <Login />
+      </AppContext.Provider>
+    )
   }
 
   return (
@@ -326,7 +376,17 @@ export default function App() {
       {page === 'customers' && <Customers />}
       {page === 'followup' && <Followup />}
 
-      {collectTask && <CollectModal task={collectTask} onClose={ctx.closeCollect} />}
+      {collectTask && (
+        <CollectModal
+          task={collectTask}
+          onClose={ctx.closeCollect}
+          onViewCustomers={() => {
+            const key = collectTask.industryKey || collectTask.understanding?.industryKey || null
+            ctx.closeCollect()
+            ctx.focusCustomers(key)
+          }}
+        />
+      )}
       {presentOn && <PresentMode onExit={() => setPresentOn(false)} />}
     </AppContext.Provider>
   )

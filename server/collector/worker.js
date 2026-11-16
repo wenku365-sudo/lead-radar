@@ -1,70 +1,124 @@
 /**
- * 采集 Worker：定时扫描运行中的任务 → 适配器拉新评论 → 打分 → 去重落库 → WebSocket 推送。
- * 单进程内跑定时器（setInterval + 防重入），后续量大可换 BullMQ 等独立队列。
+ * 采集 Worker：定时扫描运行中的任务 → 适配器按搜索关键词搜对标视频 → 拉取评论
+ * → 匹配词过滤 → 意向打分 → 去重落库 → WebSocket 推送。
+ *
+ * 管线（适配器无关，mock / 真实 HTTP 通道同一套代码）：
+ *   1. searchVideos(task.searchKeywords)   每轮搜 2-5 条对标视频
+ *   2. fetchComments(video)                每条视频拉一批评论
+ *   3. 命中 task.matchWords 任意一个        才进入下一步（匹配词过滤）
+ *   4. scoreLead()                         规则引擎 / LLM 意向打分
+ *   5. (user_id, platform, comment_id) 唯一索引幂等去重
+ *   6. lead:new WebSocket 实时推送
  */
 import { db } from '../db.js'
-import { mapLead, nowISO, IND_BY_KEY } from '../map.js'
-import { ADAPTERS } from './adapters/mock-adapter.js'
+import { mapLead, mapTask, nowISO, safeJSON, IND_BY_KEY } from '../map.js'
+import { resolveAdapter } from './adapters/index.js'
 import { scoreLead } from '../llm/provider.js'
 
 let ticking = false
 
-function videoKey(platform, title) {
-  let h = 0
-  for (let i = 0; i < title.length; i++) h = (h * 31 + title.charCodeAt(i)) >>> 0
-  return `${platform}-v-${h}`
+/** 评论是否命中匹配词（不区分大小写） */
+export function hitMatchWords(comment, matchWords) {
+  if (!matchWords || !matchWords.length) return true // 未配置匹配词 = 不过滤
+  const lower = String(comment).toLowerCase()
+  return matchWords.some((w) => lower.includes(String(w).toLowerCase()))
 }
 
-/** 对单个任务跑一轮采集，返回新增线索数 */
+/** 任务的匹配词：优先任务自带；存量任务为空时回退行业默认关键词 */
+export function taskMatchWords(task) {
+  const words = safeJSON(task.match_words, [])
+  if (words.length) return words
+  const ind = IND_BY_KEY[task.industry_key]
+  return ind ? ind.keywords : []
+}
+
+/** 插入单条线索（幂等），返回是否新增 */
+async function insertLead(task, c, hub) {
+  const { score, level, tags, source } = await scoreLead(c.comment, task.industry_key)
+
+  // 视频幂等入库
+  db.prepare(
+    'INSERT OR IGNORE INTO videos (user_id, platform, platform_video_id, title, author, likes, comments) VALUES (?, ?, ?, ?, ?, ?, ?)'
+  ).run(task.user_id, c.platform, c.videoId || c.videoTitle, c.videoTitle, c.videoAuthor, c.videoLikes || 0, 0)
+
+  // 评论幂等入库（platform_comment_id 唯一索引去重）
+  const info = db
+    .prepare(
+      `INSERT OR IGNORE INTO leads
+       (user_id, task_id, platform, platform_comment_id, nick, avatar_color, industry_key,
+        comment, score, level, tags, video_title, video_author, likes, scored_by, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
+    )
+    .run(
+      task.user_id, task.id, c.platform, c.platformCommentId, c.nick, c.avatarColor || '#5b5bd6',
+      task.industry_key, c.comment, score, level, JSON.stringify(tags || []),
+      c.videoTitle, c.videoAuthor, c.likes || 0, source, nowISO()
+    )
+
+  if (info.changes > 0) {
+    const row = db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid)
+    if (hub && row) hub.broadcast(task.user_id, { type: 'lead:new', lead: mapLead(row) })
+    return true
+  }
+  return false
+}
+
+/** 对单个任务跑一轮采集，返回 { videos, scanned, matched, added } */
 export async function runTaskOnce(task, hub) {
-  const accounts = db
-    .prepare('SELECT * FROM platform_accounts WHERE user_id = ? AND status = ?')
-    .all(task.user_id, 'connected')
-  const adapter = ADAPTERS[accounts[0]?.adapter || 'mock'] || ADAPTERS.mock
+  const adapter = resolveAdapter()
+  const searchKeywords = safeJSON(task.search_keywords, [])
+  const ind = IND_BY_KEY[task.industry_key]
+  const searchKws = searchKeywords.length ? searchKeywords : ind ? [ind.searchWord] : []
+  const matchWords = taskMatchWords(task)
+  const industryKey = task.industry_key
 
-  const comments = adapter.fetchNewComments(task, accounts)
+  // 1. 按搜索关键词搜对标视频
+  const videos = await adapter.searchVideos({ keywords: searchKws, industryKey, count: 10 })
+  if (!videos.length) return { videos: 0, scanned: 0, matched: 0, added: 0 }
+
+  let scanned = 0
+  let matched = 0
   let added = 0
-  const videoIds = new Set()
+  const seenVideoIds = new Set()
 
-  for (const c of comments) {
-    const { score, level, tags, source } = await scoreLead(c.comment, task.industry_key)
-
-    // 视频幂等入库
-    const pvid = videoKey(c.platform, c.videoTitle)
-    db.prepare(
-      'INSERT OR IGNORE INTO videos (user_id, platform, platform_video_id, title, author) VALUES (?, ?, ?, ?, ?)'
-    ).run(task.user_id, c.platform, pvid, c.videoTitle, c.videoAuthor)
-    const videoRow = db
-      .prepare('SELECT id FROM videos WHERE user_id = ? AND platform = ? AND platform_video_id = ?')
-      .get(task.user_id, c.platform, pvid)
-    if (videoRow) videoIds.add(videoRow.id)
-
-    // 评论幂等入库（platform_comment_id 唯一索引去重）
-    const info = db
-      .prepare(
-        `INSERT OR IGNORE INTO leads
-         (user_id, task_id, platform, platform_comment_id, nick, avatar_color, industry_key,
-          comment, score, level, tags, video_title, video_author, likes, scored_by, created_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
-      )
-      .run(
-        task.user_id, task.id, c.platform, c.platformCommentId, c.nick, c.avatarColor || '#5b5bd6',
-        task.industry_key, c.comment, score, level, JSON.stringify(tags || []),
-        c.videoTitle, c.videoAuthor, c.likes || 0, source, nowISO()
-      )
-
-    if (info.changes > 0) {
-      added++
-      const row = db.prepare('SELECT * FROM leads WHERE id = ?').get(info.lastInsertRowid)
-      if (hub && row) hub.broadcast(task.user_id, { type: 'lead:new', lead: mapLead(row) })
+  // 2. 逐视频拉评论 → 3. 匹配词过滤 → 4/5/6. 打分去重推送
+  for (const v of videos.slice(0, 5)) {
+    let comments = []
+    try {
+      comments = await adapter.fetchComments(v, { industryKey, count: 50 })
+    } catch (e) {
+      console.warn(`[worker] 拉取评论失败（视频 ${v.title}）:`, e.message)
+      continue
     }
+    scanned += comments.length
+
+    for (const c of comments) {
+      if (!hitMatchWords(c.comment, matchWords)) continue
+      matched++
+      c.videoId = v.platformVideoId
+      c.videoLikes = v.likes
+      if (await insertLead(task, c, hub)) added++
+    }
+    seenVideoIds.add(v.platformVideoId)
   }
 
   db.prepare(
     'UPDATE tasks SET last_run_at = ?, videos_found = videos_found + ?, customers_found = customers_found + ? WHERE id = ?'
-  ).run(nowISO(), videoIds.size, added, task.id)
+  ).run(nowISO(), seenVideoIds.size, added, task.id)
 
-  return added
+  if (added > 0) {
+    console.log(
+      `[worker] 任务「${task.title}」本轮：视频 ${seenVideoIds.size} · 扫描评论 ${scanned} · 命中 ${matched} · 新增线索 ${added}`
+    )
+  }
+  return { videos: seenVideoIds.size, scanned, matched, added }
+}
+
+/** 手动触发一轮（路由用，同时返回最新任务对象） */
+export async function runTaskRound(task, hub) {
+  const stat = await runTaskOnce(task, hub)
+  const row = db.prepare('SELECT * FROM tasks WHERE id = ?').get(task.id)
+  return { stat, task: row ? mapTask(row) : null }
 }
 
 /** 启动常驻轮询 */

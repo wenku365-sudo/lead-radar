@@ -1,9 +1,10 @@
-import { INDUSTRIES } from '../src/data/mock.js'
+import { INDUSTRY_MAP } from '../src/data/mock.js'
 
 export const PLATFORM_LABEL = { douyin: '抖音', xhs: '小红书' }
 export const LABEL_PLATFORM = { 抖音: 'douyin', 小红书: 'xhs' }
 
-export const IND_BY_KEY = Object.fromEntries(INDUSTRIES.map((i) => [i.key, i]))
+// 共享同一份可变注册表：运行时合成的行业也能被历史任务/线索解析到
+export const IND_BY_KEY = INDUSTRY_MAP
 
 /** DB 行 → 前端 customer 形状（与 mock.js 的客户对象保持一致，页面零改动） */
 export function mapLead(row) {
@@ -13,7 +14,7 @@ export function mapLead(row) {
     nick: row.nick,
     avatarColor: row.avatar_color || '#5b5bd6',
     platform: PLATFORM_LABEL[row.platform] || row.platform,
-    industry: ind ? ind.name : row.industry_key,
+    industry: ind ? ind.name : row.industry_key || '综合需求',
     industryKey: row.industry_key,
     comment: row.comment,
     score: row.score,
@@ -44,6 +45,8 @@ export function mapTask(row) {
     emoji: row.emoji,
     desc: row.desc,
     keywords: safeJSON(row.keywords, []),
+    searchKeywords: safeJSON(row.search_keywords, []),
+    matchWords: safeJSON(row.match_words, []),
     videos: row.videos_found,
     customers: row.customers_found,
     lastRun: row.last_run_at ? relTime(row.last_run_at) : '未运行',

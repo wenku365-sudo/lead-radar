@@ -1,6 +1,8 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useApp } from '../App.jsx'
-import { INDUSTRIES, splitKeywords, levelName, makeLiveCustomer, generateReplies } from '../data/mock.js'
+import { INDUSTRIES, getIndustryCustomers, splitKeywords, levelName, makeLiveCustomer, generateReplies } from '../data/mock.js'
+import { useProgressiveCustomers } from '../data/use-progressive-customers.js'
+import { customerIndustryTabs } from '../data/customer-industry-tabs.js'
 
 function KwText({ text }) {
   return (
@@ -35,12 +37,13 @@ const SPEEDS = [
 ]
 
 export default function Customers() {
-  const { customers, markFollowed, markLater, addCustomer, mode, onLive, getReplies } = useApp()
-  const [ind, setInd] = useState('all')
+  const { customers, tasks, markFollowed, markLater, addCustomer, mode, onLive, getReplies, customerFocus, clearCustomerFocus } = useApp()
+  const [ind, setInd] = useState(customerFocus || 'all')
   const [platform, setPlatform] = useState('all')
   const [level, setLevel] = useState('all')
   const [q, setQ] = useState('')
   const [selected, setSelected] = useState(null)
+  const [indOpen, setIndOpen] = useState(false) // 行业筛选：默认收起只显示一行
 
   // ===== 实时采集动效状态 =====
   const [live, setLive] = useState(true)
@@ -51,6 +54,51 @@ export default function Customers() {
   const [lastAt, setLastAt] = useState(null)
   const [copied, setCopied] = useState(null)
   const [replies, setReplies] = useState(null) // 抽屉话术：null=生成中
+  const animationTimers = useRef(new Set())
+
+  useEffect(() => () => {
+    for (const timer of animationTimers.current) clearTimeout(timer)
+  }, [])
+
+  const animateCustomer = (c) => {
+    setSessionNew((n) => n + 1)
+    setLastAt(new Date())
+    setFreshIds((ids) => ids.includes(c.id) ? ids : [...ids, c.id])
+    setToast({ id: c.id, nick: c.nick, industry: c.industry, score: c.score, platform: c.platform })
+    const later = (fn, delay) => {
+      const timer = setTimeout(() => { animationTimers.current.delete(timer); fn() }, delay)
+      animationTimers.current.add(timer)
+    }
+    later(() => setFreshIds((ids) => ids.filter((id) => id !== c.id)), speed < 900 ? 2000 : 6000)
+    later(() => setToast((t) => t?.id === c.id ? null : t), speed < 900 ? 1500 : 3000)
+  }
+
+  const list = useMemo(() => customers.filter((c) => {
+    if (ind !== 'all' && c.industryKey !== ind) return false
+    if (platform !== 'all' && c.platform !== platform) return false
+    if (level !== 'all' && c.level !== level) return false
+    if (q && !c.comment.includes(q) && !c.nick.includes(q)) return false
+    return true
+  }), [customers, ind, platform, level, q])
+  const filterKey = JSON.stringify([mode, ind, platform, level, q])
+  const { visibleCustomers, revealCustomer, hasPending } = useProgressiveCustomers(list, filterKey, live, animateCustomer)
+
+  // ===== 行业样本渐进载入 =====
+  // 每次先展示 15 条，其余已有客户及尚未载入的行业样本逐条插入，
+  // 由下方定时器逐条插入列表，复用「新线索滑入 + NEW 徽标 + 右下角提示」的采集动效
+  const stageQueue = useRef([])
+
+  // 采集完成跳转过来时，自动应用本次任务的行业筛选（消费一次后清空）
+  useEffect(() => {
+    if (!customerFocus) return
+    setInd(customerFocus)
+    setPlatform('all')
+    setLevel('all')
+    setQ('')
+    setSelected(null)
+    setIndOpen(false) // 任务跳转也默认收起，自定义目标行业排在首位
+    clearCustomerFocus()
+  }, [customerFocus, clearCustomerFocus])
 
   // 打开抽屉时加载 AI 推荐话术（在线模式可走大模型，失败回退本地模板）
   useEffect(() => {
@@ -84,12 +132,14 @@ export default function Customers() {
 
   // 用 ref 持有最新筛选条件，避免定时器被反复重建
   const cfg = useRef({})
-  cfg.current = { ind, platform, level, q, addCustomer }
+  cfg.current = { ind, platform, level, q, addCustomer, revealCustomer, animateCustomer, hasPending }
 
   useEffect(() => {
     // 在线模式：数据流来自 WebSocket 真实推送，不走本地模拟定时器
     if (mode === 'api' || !live) return
     const timer = setInterval(() => {
+      // 行业样本正在渐进载入时，暂停随机新客插入，避免两套动效打架
+      if (stageQueue.current.length || cfg.current.hasPending) return
       const { ind: ci, platform: cp, level: cl, q: cq, addCustomer: add } = cfg.current
       const c = makeLiveCustomer({
         industryKey: ci === 'all' ? undefined : ci,
@@ -98,19 +148,8 @@ export default function Customers() {
         q: cq || undefined
       })
       add(c)
-      setSessionNew((n) => n + 1)
-      setLastAt(new Date())
-      setFreshIds((f) => [...f, c.id])
-      setToast({ id: c.id, nick: c.nick, industry: c.industry, score: c.score, platform: c.platform })
-
-      // 高速档位下缩短高亮与提示时长，避免整屏泛绿 / 提示堆叠
-      const freshMs = speed < 900 ? 2000 : 6000
-      const toastMs = speed < 900 ? 1500 : 3000
-
-      // 高亮结束后移除（列表滚动/重新渲染不会中断）
-      setTimeout(() => setFreshIds((f) => f.filter((x) => x !== c.id)), freshMs)
-      // 提示自动消失
-      setTimeout(() => setToast((t) => (t && t.id === c.id ? null : t)), toastMs)
+      cfg.current.revealCustomer(c)
+      cfg.current.animateCustomer(c)
     }, speed)
     return () => clearInterval(timer)
   }, [live, speed, mode])
@@ -119,14 +158,35 @@ export default function Customers() {
   useEffect(() => {
     if (mode !== 'api') return
     return onLive((c) => {
-      setSessionNew((n) => n + 1)
-      setLastAt(new Date())
-      setFreshIds((f) => [...f, c.id])
-      setToast({ id: c.id, nick: c.nick, industry: c.industry, score: c.score, platform: c.platform })
-      setTimeout(() => setFreshIds((f) => f.filter((x) => x !== c.id)), 6000)
-      setTimeout(() => setToast((t) => (t && t.id === c.id ? null : t)), 3000)
+      cfg.current.revealCustomer(c)
+      cfg.current.animateCustomer(c)
     })
   }, [mode, onLive])
+
+  // ===== 渐进载入（演示模式）=====
+  // 当前行业已展示的数据之外的存量样本（50-100 条中尚未插入的部分）排入队列
+  useEffect(() => {
+    if (mode === 'api' || ind === 'all') {
+      stageQueue.current = []
+      return
+    }
+    const have = new Set(customers.filter((c) => c.industryKey === ind).map((c) => c.id))
+    stageQueue.current = getIndustryCustomers(ind).filter((c) => !have.has(c.id))
+  }, [ind, customers, mode])
+
+  // 队列逐条插入：复用新线索动效（行滑入高亮 + NEW 徽标 + 右下角提示 + 意向分弹跳）
+  useEffect(() => {
+    if (mode === 'api' || !live) return
+    const timer = setInterval(() => {
+      if (cfg.current.hasPending) return
+      const c = stageQueue.current.shift()
+      if (!c) return
+      cfg.current.addCustomer(c)
+      cfg.current.revealCustomer(c)
+      cfg.current.animateCustomer(c)
+    }, 750)
+    return () => clearInterval(timer)
+  }, [mode, live])
 
   const indCounts = useMemo(() => {
     const m = {}
@@ -134,15 +194,18 @@ export default function Customers() {
     return m
   }, [customers])
 
-  const list = useMemo(() => {
-    return customers.filter((c) => {
-      if (ind !== 'all' && c.industryKey !== ind) return false
-      if (platform !== 'all' && c.platform !== platform) return false
-      if (level !== 'all' && c.level !== level) return false
-      if (q && !c.comment.includes(q) && !c.nick.includes(q)) return false
-      return true
-    })
-  }, [customers, ind, platform, level, q])
+  // 最新自定义行业放在第一排首位；同时覆盖演示注册表、在线任务和历史线索。
+  const indTabs = useMemo(
+    () => customerIndustryTabs(INDUSTRIES, tasks, customers, ind),
+    [tasks, customers, ind]
+  )
+  const leadingIndustry = indTabs[0]?.custom ? indTabs[0] : null
+  const renderIndustryTab = (industry) => (
+    <button key={industry.key} className={'ind-tab' + (ind === industry.key ? ' active' : '')} onClick={() => setInd(industry.key)}>
+      {industry.emoji} {industry.name}
+      <span className="cnt">{indCounts[industry.key] || 0}</span>
+    </button>
+  )
 
   const scoreCls = (l) => (l === 'high' ? 'score-high' : l === 'mid' ? 'score-mid' : 'score-low')
   const tagCls = (l) => (l === 'high' ? 'tag-red' : l === 'mid' ? 'tag-orange' : 'tag-gray')
@@ -173,7 +236,7 @@ export default function Customers() {
               {live ? '实时采集中' : '采集已暂停'}
               <span className="live-sub">
                 {live
-                  ? (ind === 'all' ? '全部行业' : INDUSTRIES.find((i) => i.key === ind)?.name + ' · ') +
+                  ? (ind === 'all' ? '全部行业' : indTabs.find((i) => i.key === ind)?.name + ' · ') +
                     (platform === 'all' ? '双平台' : platform)
                   : '点击「继续采集」恢复数据流'}
               </span>
@@ -223,16 +286,24 @@ export default function Customers() {
 
       {/* 筛选工具栏 */}
       <div className="card cust-toolbar">
-        <div className="ind-tabs">
-          <button className={'ind-tab' + (ind === 'all' ? ' active' : '')} onClick={() => setInd('all')}>
-            全部<span className="cnt">{customers.length}</span>
-          </button>
-          {INDUSTRIES.map((i) => (
-            <button key={i.key} className={'ind-tab' + (ind === i.key ? ' active' : '')} onClick={() => setInd(i.key)}>
-              {i.emoji} {i.name}
-              <span className="cnt">{indCounts[i.key] || 0}</span>
+        <div className="ind-filter-bar">
+          <div className={'ind-tabs' + (indOpen ? '' : ' collapsed')}>
+            {leadingIndustry && renderIndustryTab(leadingIndustry)}
+            <button className={'ind-tab' + (ind === 'all' ? ' active' : '')} onClick={() => setInd('all')}>
+              全部<span className="cnt">{customers.length}</span>
             </button>
-          ))}
+            {indTabs.filter((industry) => industry !== leadingIndustry).map(renderIndustryTab)}
+          </div>
+          <button
+            className={'ind-toggle' + (indOpen ? ' open' : '')}
+            title={indOpen ? '收起行业列表' : '展开全部行业'}
+            onClick={() => setIndOpen((v) => !v)}
+          >
+            {!indOpen && ind !== 'all' && <i className="ind-toggle-dot" />}
+            {indOpen ? '收起' : '展开全部'}
+            <span className="ind-toggle-n">{indTabs.length}</span>
+            <span className="ind-toggle-ar">{indOpen ? '▴' : '▾'}</span>
+          </button>
         </div>
         <div className="filter-row">
           <select className="filter-select" value={platform} onChange={(e) => setPlatform(e.target.value)}>
@@ -255,7 +326,7 @@ export default function Customers() {
             />
           </div>
           <span style={{ fontSize: 13, color: '#6b7280', fontWeight: 700, whiteSpace: 'nowrap' }}>
-            筛选结果 {list.length} 条
+            筛选结果 {list.length} 条 · 已显示 {visibleCustomers.length} 条{hasPending && ' · 逐条载入中'}
           </span>
         </div>
       </div>
@@ -272,12 +343,20 @@ export default function Customers() {
         </div>
         {list.length === 0 ? (
           <div className="empty-state">
-            <div className="eico">🔍</div>
-            <div className="et">没有找到匹配的客户</div>
-            <div className="ed">试试更换行业、平台或搜索关键词，或点击右上角「重置筛选」</div>
+            <div className="eico">{ind === 'all' ? '🔍' : '⏳'}</div>
+            <div className="et">
+              {ind === 'all'
+                ? '没有找到匹配的客户'
+                : `「${indTabs.find((i) => i.key === ind)?.name || '该行业'}」暂无线索`}
+            </div>
+            <div className="ed">
+              {ind === 'all'
+                ? '试试更换行业、平台或搜索关键词，或点击右上角「重置筛选」'
+                : '后台采集可能仍在进行，命中匹配词的评论会自动推送到这里；也可以「重置筛选」查看全部客户'}
+            </div>
           </div>
         ) : (
-          list.map((c) => {
+          visibleCustomers.map((c) => {
             const isFresh = freshIds.includes(c.id)
             return (
             <div

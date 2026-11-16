@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useApp } from '../App.jsx'
 import { api, setToken } from '../api/client.js'
+import { TOTAL_LEADS } from '../data/mock.js'
 
 /**
  * 登录 / 注册页（在线模式入口）。
@@ -87,7 +88,7 @@ export default function Login() {
         </form>
 
         <div className="login-hint">
-          演示账号 <b>demo</b> / <b>demo123</b>，已预置 7 个采集任务与 372+ 条线索
+          演示账号 <b>demo</b> / <b>demo123</b>，已预置 8 个采集任务与 {TOTAL_LEADS}+ 条线索
         </div>
 
         <button className="login-back" onClick={backToDemo}>

@@ -96,6 +96,13 @@ CREATE TABLE IF NOT EXISTS follow_logs (
   created_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 运行时实时合成的行业（用户输入什么行业就生成什么，重启后仍可解析历史任务/线索）
+CREATE TABLE IF NOT EXISTS industries (
+  key TEXT PRIMARY KEY,
+  data TEXT NOT NULL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_leads_user_industry ON leads(user_id, industry_key);
 CREATE INDEX IF NOT EXISTS idx_leads_user_platform ON leads(user_id, platform);
 CREATE INDEX IF NOT EXISTS idx_leads_user_level ON leads(user_id, level);
@@ -104,5 +111,16 @@ CREATE INDEX IF NOT EXISTS idx_leads_user_status ON leads(user_id, follow_status
 CREATE INDEX IF NOT EXISTS idx_tasks_user ON tasks(user_id);
 CREATE INDEX IF NOT EXISTS idx_follow_logs_lead ON follow_logs(lead_id);
 `)
+
+/* ---------------- 存量库迁移：tasks 表补搜索关键词 / 匹配词列 ---------------- */
+function addColumnIfMissing(table, column, ddl) {
+  const cols = db.prepare(`PRAGMA table_info(${table})`).all().map((c) => c.name)
+  if (!cols.includes(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`)
+    console.log(`[db] 迁移：${table} 增加 ${column}`)
+  }
+}
+addColumnIfMissing('tasks', 'search_keywords', "TEXT NOT NULL DEFAULT '[]'") // 搜索对标视频的关键词
+addColumnIfMissing('tasks', 'match_words', "TEXT NOT NULL DEFAULT '[]'")     // 评论里需命中的匹配词
 
 console.log('[db] ready:', path.join(DATA_DIR, 'lead-radar.db'))

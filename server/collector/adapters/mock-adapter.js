@@ -1,9 +1,11 @@
 /**
- * 平台适配器（Mock）：模拟"已授权账号"的评论流入。
+ * 平台适配器（Mock）：模拟"搜索对标视频 → 拉取评论"的真实采集节奏。
  *
- * 真实接入时新建 adapters/douyin-open.js、adapters/xhs-pro.js，
- * 实现同样的 fetchNewComments(task, accounts) 接口并在 adapters/index.js 注册，
- * 其余代码（打分/去重/推送/落库）零改动。
+ * 接口契约（真实适配器同样实现这两个方法，其余代码零改动）：
+ *   searchVideos({ keywords, count })  → [{ platform, platformVideoId, title, author, likes, comments }]
+ *   fetchComments(video, { count })    → [{ platform, platformCommentId, nick, avatarColor, comment, videoTitle, videoAuthor, likes }]
+ *
+ * 评论刻意混入普通闲聊，让"匹配词过滤"环节有真实的通过率。
  */
 import { INDUSTRIES } from '../../../src/data/mock.js'
 import { IND_BY_KEY } from '../../map.js'
@@ -18,26 +20,57 @@ const NICKS = [
 
 const COLORS = ['#5b5bd6', '#d6455b', '#1d9e75', '#e8833a', '#7f77dd', '#993556', '#185fa5', '#854f0b']
 
+// 普通闲聊评论（不含购买意向，会被匹配词过滤掉）
+const CHATTER = [
+  '哈哈哈哈哈笑死了', '已三连', '前排围观', '拍得真好', '收藏了慢慢看',
+  'UP主有心了', '这就是生活啊', 'bgm叫什么？', '每天来看一遍', '太真实了',
+  '蹲一个后续', '泪目', '算法快推', '第一！', '沙发'
+]
+
 function pick(arr) {
   return arr[Math.floor(Math.random() * arr.length)]
 }
 
-/** 每次轮询：60% 概率产生 1-3 条新评论，模拟真实评论节奏 */
-export function fetchNewComments(task, accounts) {
-  if (Math.random() > 0.6) return []
-  const ind = IND_BY_KEY[task.industry_key] || INDUSTRIES[0]
-  const platforms = accounts.length ? accounts.map((a) => a.platform) : ['douyin', 'xhs']
+/** 未知行业（如「综合需求」任务）时，从全部行业池里随机取材，避免错标成某个固定行业 */
+function pickIndustry(industryKey) {
+  return IND_BY_KEY[industryKey] || INDUSTRIES[Math.floor(Math.random() * INDUSTRIES.length)]
+}
+
+/** 搜索对标视频：按任务行业返回视频池（每轮 1-3 条，贴近真实节奏） */
+export function searchVideos({ keywords = [], industryKey } = {}) {
+  const ind = pickIndustry(industryKey)
+  const out = []
   const n = 1 + Math.floor(Math.random() * 3)
+  for (let i = 0; i < n; i++) {
+    const v = ind.videos[Math.floor(Math.random() * ind.videos.length)]
+    out.push({
+      platform: 'douyin',
+      platformVideoId: `mock-v-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      industryKey: ind.key, // 记住本条视频取材的行业，取评论时保持一致
+      title: v.title,
+      author: v.author,
+      likes: v.likes || 0,
+      comments: v.cmts || 0
+    })
+  }
+  return out
+}
+
+/** 拉取单个视频的评论：混有意向评论（来自行业语料）与闲聊评论 */
+export function fetchComments(video, { industryKey } = {}) {
+  const ind = IND_BY_KEY[video.industryKey] || pickIndustry(industryKey)
+  const n = 2 + Math.floor(Math.random() * 4) // 每个视频 2-5 条
   const out = []
   for (let i = 0; i < n; i++) {
-    const platform = pick(platforms)
-    const video = ind.videos[Math.floor(Math.random() * ind.videos.length)]
+    // 约 45% 是意向评论，其余是闲聊（体现匹配词过滤的真实通过率）
+    const isIntent = Math.random() < 0.45
+    const nick = pick(NICKS) + (Math.random() < 0.35 ? '_' + (10 + Math.floor(Math.random() * 90)) : '')
     out.push({
-      platform,
-      platformCommentId: `mock-${platform}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-      nick: pick(NICKS) + (Math.random() < 0.35 ? '_' + (10 + Math.floor(Math.random() * 90)) : ''),
+      platform: 'douyin',
+      platformCommentId: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+      nick,
       avatarColor: pick(COLORS),
-      comment: ind.comments[Math.floor(Math.random() * ind.comments.length)],
+      comment: isIntent ? ind.comments[Math.floor(Math.random() * ind.comments.length)] : pick(CHATTER),
       videoTitle: video.title,
       videoAuthor: video.author,
       likes: Math.floor(Math.random() * 220)
@@ -46,5 +79,4 @@ export function fetchNewComments(task, accounts) {
   return out
 }
 
-/** 适配器注册表：worker 按账号的 adapter 字段取对应实现 */
-export const ADAPTERS = { mock: { fetchNewComments } }
+export const mockAdapter = { name: 'mock', searchVideos, fetchComments }

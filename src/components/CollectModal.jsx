@@ -1,11 +1,12 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { INDUSTRIES, splitKeywords } from '../data/mock.js'
+import { splitKeywords } from '../data/mock.js'
+import { resolveCollectionPreview } from '../data/collection-preview.js'
 
-// 时间轴（毫秒）
-const T_STAGE2 = 6800
-const T_STAGE3 = 12400
-const T_STAGE4 = 22600
-const CMT_INTERVAL = 1550
+// 时间轴（毫秒）：搜索 3 秒、详情 2.5 秒、评论 4.5 秒，总计约 10 秒
+const T_STAGE2 = 3000
+const T_STAGE3 = 5500
+const T_STAGE4 = 10000
+const CMT_INTERVAL = 650
 const CMT_COUNT = 6
 
 const NICKS = ['小满不吃香菜', '爱吃菠萝的琳', '山城小土豆', '北纬三十度', '桃桃乌龙', '奔跑的蜗牛']
@@ -21,9 +22,9 @@ function KwText({ text }) {
   )
 }
 
-export default function CollectModal({ task, onClose }) {
+export default function CollectModal({ task, onClose, onViewCustomers }) {
   const ind = useMemo(
-    () => INDUSTRIES.find((i) => i.name === task.industry) || INDUSTRIES[0],
+    () => resolveCollectionPreview(task),
     [task]
   )
   const [elapsed, setElapsed] = useState(0)
@@ -42,12 +43,12 @@ export default function CollectModal({ task, onClose }) {
   // 阶段一：视频卡片出现节奏
   const cards = ind.videos.slice(0, 3).map((v, i) => ({
     ...v,
-    visible: elapsed > 500 + i * 1150,
-    locked: elapsed > 5300 && i === 0
+    visible: elapsed > 250 + i * 500,
+    locked: elapsed > 2300 && i === 0
   }))
 
   // 阶段二：播放进度
-  const vp = Math.min(100, Math.max(0, ((elapsed - T_STAGE2) / (T_STAGE3 - T_STAGE2 - 400)) * 100))
+  const vp = Math.min(100, Math.max(0, ((elapsed - T_STAGE2) / (T_STAGE3 - T_STAGE2 - 200)) * 100))
   const video = ind.videos[0]
 
   // 阶段三：评论逐条
@@ -65,14 +66,18 @@ export default function CollectModal({ task, onClose }) {
     [ind]
   )
   const cmtState = (i) => {
-    const start = T_STAGE3 + 200 + i * CMT_INTERVAL
+    const start = T_STAGE3 + 100 + i * CMT_INTERVAL
     if (elapsed < start) return 'hidden'
-    if (elapsed < start + 450) return 'pending'
-    if (elapsed < start + 1050) return 'doing'
+    if (elapsed < start + 180) return 'pending'
+    if (elapsed < start + 450) return 'doing'
     return 'done'
   }
   const doneCount = comments.filter((_, i) => cmtState(i) === 'done').length
   const customerCount = comments.filter((c, i) => cmtState(i) === 'done' && c.high).length
+
+  // 本轮采集总意向客户数：与行业模拟样本量一致（50-100 条），弹窗里只逐条演示其中 6 条
+  const totalCustomers = Math.min(100, task.customers || ind.count || 50)
+  const highTotal = Math.max(3, Math.round(totalCustomers * 0.26))
 
   // 头部统计
   const videoStat = Math.min(128, Math.round(Math.min(1, elapsed / T_STAGE2) * 128))
@@ -163,7 +168,7 @@ export default function CollectModal({ task, onClose }) {
                           background: ['linear-gradient(135deg,#3b2a6b,#241a45)', 'linear-gradient(135deg,#2c3a6e,#1a2245)', 'linear-gradient(135deg,#5b2a4a,#2c1a38)'][i],
                           display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 36
                         }}>
-                          {['🛋️', '📦', '🪵'][i] || '🎬'}
+                          {c.emoji || ind.emoji}
                           <span className="dur">0{1 + i}:{30 + i * 7}</span>
                         </div>
                         <div className="vmeta">
@@ -201,11 +206,11 @@ export default function CollectModal({ task, onClose }) {
                   <div style={{ flex: 1 }}>
                     <div className="dbt">采集完成</div>
                     <div className="dbd">
-                      本轮共找到 128 条视频，翻阅 428 条评论，采集到 {customerCount} 位意向客户，已全部加入线索池
+                      本轮共找到 {videoStat} 条视频，翻阅 {cmtStat} 条评论，采集到 {totalCustomers} 位意向客户，已全部加入线索池
                     </div>
                   </div>
-                  <span className="tag tag-red" style={{ fontSize: 13, padding: '5px 12px' }}>
-                    高意向 {comments.filter(c => c.high).length} 位
+                  <span className="tag tag-red" style={{ fontSize: 13, padding: '5px 12px', flex: 'none' }}>
+                    高意向 {highTotal} 位
                   </span>
                 </div>
               )}
@@ -216,7 +221,7 @@ export default function CollectModal({ task, onClose }) {
                     className="dl-cover"
                     style={{ background: 'linear-gradient(135deg,#3b2a6b,#1f1740)' }}
                   >
-                    🛋️
+                    {video.emoji || ind.emoji}
                     {stage === 2 && (
                       <div style={{
                         position: 'absolute', inset: 0,
@@ -343,10 +348,20 @@ export default function CollectModal({ task, onClose }) {
           )}
         </div>
 
-        {/* 底部提示 */}
-        {stage < 4 && (
+        {/* 底部：采集中提示 / 完成后跳转意向客户 */}
+        {stage < 4 ? (
           <div style={{ padding: '0 24px 20px', textAlign: 'center', color: '#767d99', fontSize: 12.5 }}>
             采集进行中，请勿关闭窗口 · 采集完成后可手动关闭（预计还需 {Math.max(1, Math.ceil((T_STAGE4 - elapsed) / 1000))} 秒）
+          </div>
+        ) : (
+          <div className="cm-done-actions">
+            <div className="cm-done-hint">
+              <span className="cm-done-dot" />
+              已加入线索池 · 本轮共 {totalCustomers} 位「{task.industry}」客户，进入意向客户页可直接开始跟进
+            </div>
+            <button className="btn btn-primary btn-lg" onClick={() => onViewCustomers?.()}>
+              👥 查看这 {totalCustomers} 位「{task.industry}」意向客户 →
+            </button>
           </div>
         )}
       </div>

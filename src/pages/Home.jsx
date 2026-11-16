@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { useApp } from '../App.jsx'
-import { splitKeywords, INDUSTRIES } from '../data/mock.js'
+import { splitKeywords, INDUSTRIES, INDUSTRY_COUNT, TOTAL_LEADS } from '../data/mock.js'
 
 /* ============ 实时获客信号面板 ============ */
 const SIGNAL_POOL = [
@@ -96,7 +96,7 @@ function PlatformStrip() {
   const items = [
     { n: '抖音', d: '公开视频 · 评论区' },
     { n: '小红书', d: '公开笔记 · 评论区' },
-    { n: '7 大行业', d: '家具 / 装修 / 医美 / 教育等' },
+    { n: '任意行业', d: '输入即分析，实时生成行业模型' },
     { n: '24 小时', d: '任务持续监控' },
     { n: '0 行代码', d: '一句话交代任务即可' }
   ]
@@ -280,7 +280,7 @@ function MiniPool() {
       <div className="mini-bar"><span />意向客户 · 实时流入</div>
       <div className="mini-body">
         <div className="mini-stats">
-          <div><b>372</b><span>累计客户</span></div>
+          <div><b>{TOTAL_LEADS}</b><span>累计客户</span></div>
           <div><b>68</b><span>今日新增</span></div>
           <div><b>84</b><span>平均意向分</span></div>
         </div>
@@ -395,7 +395,7 @@ function Metrics() {
           <h2 className="light">获客效率，肉眼可见的提升</h2>
         </div>
         <div className="metric-row">
-          <Metric to={372} suffix="+" label="累计意向客户" sub="7 大行业持续沉淀" />
+          <Metric to={TOTAL_LEADS} suffix="+" label="累计意向客户" sub={`${INDUSTRY_COUNT} 大行业持续沉淀`} />
           <Metric to={428} label="单轮翻阅评论" sub="相当于人工 6 小时" />
           <Metric to={84} suffix=" 分" label="平均意向评分" sub="高意向占比 31%" />
           <Metric to={24} suffix=" h" label="任务持续监控" sub="无需人工值守" />
@@ -412,7 +412,7 @@ function Industry() {
       <div className="sec-inner">
         <div className="sec-head">
           <div className="eyebrow">INDUSTRY COVERAGE</div>
-          <h2>已覆盖 7 个高频获客行业</h2>
+          <h2>已覆盖 {INDUSTRIES.length} 个高频获客行业</h2>
           <p>每个行业都配好了真实感的客户样本，切换即可查看对应话术与意向分布。</p>
         </div>
         <div className="ind-grid">
@@ -502,7 +502,7 @@ const FAQ = [
   { q: '需要注册登录吗？需要付费吗？', a: '不需要。打开即可使用，无登录、无账号、无后端、无数据库，所有状态保存在浏览器内存中，刷新即重置。' },
   { q: '「一句话交代任务」AI 是怎么理解的？', a: '系统会根据你输入的自然语言，匹配出目标人群、搜索范围与重点识别关键词（如怎么收费、优惠、推荐、报名、价格等），并给出预计发现的视频数与客户数，整个过程在本地完成。' },
   { q: '采集动画能重复看吗？', a: '可以。在「采集数据」页点击任意任务的「立即采集」，即可重新播放约 22 秒的四阶段采集动画，弹窗不会自动关闭，方便现场讲解。' },
-  { q: '支持哪些行业？', a: '当前内置 7 个行业共 372 条客户样本：家具 40 / 少儿编程 40 / 私教减脂 40 / 装修 55 / 医美 68 / 二手房 82 / 二手车 47，可在「意向客户」页自由切换筛选。' },
+  { q: '支持哪些行业？', a: `不限制行业。系统内置 ${INDUSTRY_COUNT} 个高质量行业样本共 ${TOTAL_LEADS} 条客户数据，你输入任何行业（比如宠物殡葬、无人机培训、月子中心），都会实时分析业务形态，生成这个行业专属的搜索词、匹配词、评论样本和话术。` },
   { q: '手机上能用吗？', a: '可以。页面已做 1024px 与 640px 两档响应式适配，手机、平板、桌面均可正常浏览与操作。' }
 ]
 
@@ -637,7 +637,7 @@ export default function Home() {
             </div>
             <div className="hero-stats">
               <div className="hero-stat">
-                <div className="num"><Counter to={372} /></div>
+                <div className="num"><Counter to={TOTAL_LEADS} /></div>
                 <div className="lbl">已发现线索（累计）</div>
               </div>
               <div className="hero-stat">

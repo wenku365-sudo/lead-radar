@@ -13,11 +13,15 @@ import { requireAuth } from './auth.js'
 import { createHub } from './ws.js'
 import { startWorker } from './collector/worker.js'
 import { seedIfEmpty } from './seed.js'
+import { loadGeneratedIndustries } from './industry-store.js'
 import { llmEnabled } from './llm/provider.js'
+import { dataSourceInfo } from './collector/adapters/index.js'
 import authRoutes from './routes/auth.js'
 import taskRoutes from './routes/tasks.js'
 import leadRoutes from './routes/leads.js'
 import statsRoutes from './routes/stats.js'
+import dataRoutes from './routes/import.js'
+import simRoutes from './dev/douyin-sim/sim.js'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
@@ -35,13 +39,20 @@ app.use((req, res, next) => {
 })
 
 app.get('/api/health', (req, res) =>
-  res.json({ ok: true, ts: Date.now(), llm: llmEnabled ? 'enabled' : 'rules-fallback' })
+  res.json({
+    ok: true,
+    ts: Date.now(),
+    llm: llmEnabled ? 'enabled' : 'rules-fallback',
+    dataSource: dataSourceInfo().mode
+  })
 )
 
 app.use('/api/auth', authRoutes)
 app.use('/api/tasks', requireAuth, taskRoutes)
 app.use('/api/leads', requireAuth, leadRoutes)
 app.use('/api/stats', requireAuth, statsRoutes)
+app.use('/api', requireAuth, dataRoutes)
+app.use('/', simRoutes) // 仿真抖音页面 /sim + /sim/data（浏览器自动化采集的演示目标页）
 
 // 静态托管前端构建产物（npm run build 后生效），SPA 回退
 const distDir = path.resolve(__dirname, '../dist')
@@ -61,16 +72,19 @@ app.use((err, req, res, next) => {
 })
 
 const server = app.listen(PORT, () => {
+  const ds = dataSourceInfo()
   console.log('==============================================')
   console.log(`  线索雷达 · 后端服务已启动`)
   console.log(`  地址      http://localhost:${PORT}`)
   console.log(`  演示账号  demo / demo123`)
   console.log(`  意向打分  ${llmEnabled ? '大模型（' + (process.env.LLM_MODEL || 'gpt-4o-mini') + '）' : '规则引擎（配置 LLM_API_KEY 可启用大模型）'}`)
+  console.log(`  数据源    ${ds.adapter}${ds.mode === 'mock' ? '（' + ds.hint + '）' : ''}`)
   console.log('==============================================')
 })
 
 const hub = createHub(server)
 app.set('hub', hub)
 
+loadGeneratedIndustries()
 seedIfEmpty()
 startWorker(hub)
