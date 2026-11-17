@@ -6,10 +6,10 @@
 
 1. 登录 https://dashboard.render.com ，关联 GitHub 账号，并授权访问 `wenku365-sudo/lead-radar`。
 2. 点击 **New → Blueprint**，选择该仓库、`main` 分支和根目录下的 `render.yaml`。
-3. 核对创建的资源：一个 **Starter Web Service**、一块 **1 GB 持久磁盘**。这会产生费用，请以控制台确认的价格为准。不要改成无磁盘的免费服务，否则账号和任务可能在重启、重新发布后丢失。
+3. 核对创建的资源：一个付费 Node Web Service（0.5 CPU / 512 MB）、一块 **1 GB 持久磁盘**。这会产生费用，请以创建页面确认的价格为准。不要改成无磁盘的免费服务，否则账号和任务可能在重启、重新发布后丢失。
 4. 确认创建，等待构建和部署完成。成功后服务页面会显示一个 `https://...onrender.com` 地址；实际名称以平台分配为准。
 
-本配置使用 Node 24、`npm ci --include=dev && npm run build` 构建、`npm start` 启动、`/api/health` 健康检查。`JWT_SECRET` 由平台自动生成，SQLite 存在持久目录 `/var/data/lead-radar`。平台提供 `PORT`，无需手动填写 5190。请勿设置 `GH_PAGES_BASE` 或 `VITE_STATIC_HOSTING=true`，这些仅用于 GitHub Pages 构建。
+本配置固定 Node 24.22.1、`npm ci --include=dev && npm run build` 构建、`npm start` 启动、`/api/health` 健康检查。`JWT_SECRET` 由平台自动生成，SQLite 存在持久目录 `/var/data/lead-radar`。平台提供 `PORT`，无需手动填写 5190。请勿设置 `GH_PAGES_BASE` 或 `VITE_STATIC_HOSTING=true`，这些仅用于 GitHub Pages 构建。
 
 ## 2. 首次登录和跨设备使用
 
