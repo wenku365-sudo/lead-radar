@@ -17,6 +17,15 @@ GitHub Pages（演示模式）：**<https://wenku365-sudo.github.io/lead-radar/>
 
 当前版本支持自定义行业任务；采集弹窗约 10 秒完成，内容跟随任务行业；意向客户首次展示 15 条，其余逐条插入；行业栏默认收起，自定义行业优先显示。GitHub Pages 托管前端演示模式，在线采集与数据库需要单独运行后端服务。
 
+### 登录与后端连接
+
+GitHub Pages 不运行本项目的 Express / SQLite 后端，因此不能把 GitHub Pages 地址当作登录接口（会返回 HTTP 405）。登录页会明确提示服务状态，未配置后端时不会发送登录 / 注册请求。
+
+- 本机使用：启动 `npm start` 后，在登录页点击「打开本机完整版本」，使用 `demo / demo123` 登录。
+- 公网使用：先部署本项目后端并提供 HTTPS 地址，在登录页填写「后端服务地址」。地址会记在当前浏览器中；登录前先检查 `/api/health`。后端需允许前端域名的跨域访问，并支持 WebSocket。
+- 默认连接：在 GitHub 仓库 Settings → Secrets and variables → Actions → Variables 中设置 `VITE_API_BASE` 为后端 HTTPS 地址，然后重新运行发布工作流；该值是公开服务地址，请勿填写密钥。
+- 「返回演示模式」会恢复演示数据并保存模式，下次打开仍可直接进入演示。
+
 ## 页面
 
 | 页面 | 说明 |

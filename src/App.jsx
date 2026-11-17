@@ -84,7 +84,12 @@ export default function App() {
     clearToken()
     setUser(null)
     setMode('demo')
-    try { localStorage.setItem(MODE_KEY, 'demo') } catch { /* ignore */ }
+    try {
+      localStorage.setItem(MODE_KEY, 'demo')
+      const url = new URL(location.href)
+      url.searchParams.set('mode', 'demo')
+      history.replaceState(null, '', url)
+    } catch { /* ignore */ }
     setCustomers(generateCustomers())
     setTasks(DEFAULT_TASKS)
     setPage('home')
@@ -92,10 +97,15 @@ export default function App() {
 
   const switchToApi = () => {
     setMode('api')
-    try { localStorage.setItem(MODE_KEY, 'api') } catch { /* ignore */ }
+    try {
+      localStorage.setItem(MODE_KEY, 'api')
+      const url = new URL(location.href)
+      url.searchParams.set('mode', 'api')
+      history.replaceState(null, '', url)
+    } catch { /* ignore */ }
     setCustomers([])
     setTasks([])
-    setAuthReady(!!getToken())
+    setAuthReady(false)
   }
 
   // 在线模式启动：用既有 token 校验身份并拉数据
@@ -123,7 +133,7 @@ export default function App() {
       cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [mode])
 
   // 在线模式：WebSocket 实时推送（新线索 → 插入列表 + 触发动效）
   useEffect(() => {
@@ -309,7 +319,7 @@ export default function App() {
     }
     // 登录页也需要上下文（login / backToDemo）
     return (
-      <AppContext.Provider value={{ login, backToDemo: () => setMode('demo'), mode }}>
+      <AppContext.Provider value={{ login, backToDemo, mode }}>
         <Login />
       </AppContext.Provider>
     )
