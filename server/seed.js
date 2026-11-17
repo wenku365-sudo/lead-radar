@@ -10,6 +10,8 @@ import { nowISO } from './map.js'
 import { generateCustomers, DEFAULT_TASKS, INDUSTRIES } from '../src/data/mock.js'
 
 export function seedIfEmpty() {
+  const enabled = process.env.LR_SEED_DEMO ?? (process.env.NODE_ENV === 'production' ? 'false' : 'true')
+  if (enabled !== 'true') return false
   const n = db.prepare('SELECT COUNT(*) AS n FROM users').get().n
   if (n > 0) {
     return false

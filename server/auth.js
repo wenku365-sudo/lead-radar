@@ -1,6 +1,12 @@
 import jwt from 'jsonwebtoken'
 
-const SECRET = process.env.JWT_SECRET || 'lead-radar-dev-secret-change-me'
+const DEV_SECRET = 'lead-radar-dev-secret-change-me'
+const configuredSecret = process.env.JWT_SECRET
+if (process.env.NODE_ENV === 'production' &&
+    (!configuredSecret || configuredSecret.length < 32 || configuredSecret === DEV_SECRET)) {
+  throw new Error('生产环境必须设置至少 32 字符的随机 JWT_SECRET')
+}
+const SECRET = configuredSecret || DEV_SECRET
 const EXPIRES = process.env.JWT_EXPIRES || '7d'
 
 export function signToken(user) {

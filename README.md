@@ -178,6 +178,8 @@ curl -X POST http://127.0.0.1:5190/api/leads/import \
 
 ## 部署
 
+公网跨设备登录：使用根目录 `render.yaml` 在 Render 创建 Blueprint，步骤见 [DEPLOY.md](./DEPLOY.md)。默认使用持久磁盘保存 SQLite，自动生成 JWT 密钥，关闭默认演示账号；部署后在 `/?mode=api` 注册自己的账号。
+
 推送到 `main` 分支后，`.github/workflows/deploy.yml` 自动构建并发布 GitHub Pages（演示模式）。
 
 在线模式部署到任意 Node 服务器：`npm install && npm run build && npm start`，数据落在 `server/data/lead-radar.db`。建议前置 Nginx 反代并配置 `location /ws` 的 WebSocket 升级头。

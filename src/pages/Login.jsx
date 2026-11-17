@@ -117,7 +117,7 @@ export default function Login() {
         </form>
 
         <div className="login-hint">
-          {STATIC_HOSTING ? <>后端已初始化演示数据时，可使用 <b>demo</b> / <b>demo123</b> 登录。</> : <>演示账号 <b>demo</b> / <b>demo123</b>，已预置 8 个采集任务与 {TOTAL_LEADS}+ 条线索</>}
+          {STATIC_HOSTING || import.meta.env.PROD ? <>首次使用公网服务请点击「注册新账号」。只有后端已启用演示数据时，才可使用 <b>demo</b> / <b>demo123</b>。</> : <>演示账号 <b>demo</b> / <b>demo123</b>，已预置 8 个采集任务与 {TOTAL_LEADS}+ 条线索</>}
         </div>
 
         <button className="login-back" onClick={backToDemo}>
