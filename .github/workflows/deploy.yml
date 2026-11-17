@@ -34,8 +34,6 @@ jobs:
         run: npm run build
         env:
           GH_PAGES_BASE: /${{ github.event.repository.name }}/
-          VITE_STATIC_HOSTING: 'true'
-          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
 
       - name: Setup Pages
         uses: actions/configure-pages@v5

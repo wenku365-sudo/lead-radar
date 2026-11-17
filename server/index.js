@@ -76,11 +76,7 @@ const server = app.listen(PORT, () => {
   console.log('==============================================')
   console.log(`  线索雷达 · 后端服务已启动`)
   console.log(`  地址      http://localhost:${PORT}`)
-  if ((process.env.LR_SEED_DEMO ?? (process.env.NODE_ENV === 'production' ? 'false' : 'true')) === 'true') {
-    console.log('  已启用演示账号种子数据（仅供演示）')
-  } else {
-    console.log('  账号      请在登录页注册账号')
-  }
+  console.log(`  演示账号  demo / demo123`)
   console.log(`  意向打分  ${llmEnabled ? '大模型（' + (process.env.LLM_MODEL || 'gpt-4o-mini') + '）' : '规则引擎（配置 LLM_API_KEY 可启用大模型）'}`)
   console.log(`  数据源    ${ds.adapter}${ds.mode === 'mock' ? '（' + ds.hint + '）' : ''}`)
   console.log('==============================================')

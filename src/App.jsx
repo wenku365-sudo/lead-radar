@@ -1,6 +1,6 @@
-import React, { createContext, useContext, useMemo, useState, useRef, useEffect } from 'react'
+import React, { createContext, useContext, useMemo, useState, useRef } from 'react'
 import { generateCustomers, getIndustryCustomers, INITIAL_PER_INDUSTRY, DEFAULT_TASKS, understandTask, generateReplies as rulesReplies } from './data/mock.js'
-import { api, getToken, clearToken, wsConnect } from './api/client.js'
+import { api } from './api/client.js'
 import CollectModal from './components/CollectModal.jsx'
 import PresentMode from './components/PresentMode.jsx'
 import Home from './pages/Home.jsx'
@@ -9,7 +9,6 @@ import Workbench from './pages/Workbench.jsx'
 import Collection from './pages/Collection.jsx'
 import Customers from './pages/Customers.jsx'
 import Followup from './pages/Followup.jsx'
-import Login from './pages/Login.jsx'
 
 const AppContext = createContext(null)
 export const useApp = () => useContext(AppContext)
@@ -27,27 +26,11 @@ const PAGES = [
   { key: 'followup', label: '跟进工作台' }
 ]
 
-const MODE_KEY = 'lr_mode'
-function initialMode() {
-  try {
-    const p = new URLSearchParams(location.search).get('mode')
-    if (p === 'api' || p === 'demo') {
-      localStorage.setItem(MODE_KEY, p)
-      return p
-    }
-    return localStorage.getItem(MODE_KEY) || 'demo'
-  } catch {
-    return 'demo'
-  }
-}
-
 export default function App() {
-  const [mode, setMode] = useState(initialMode) // 'demo' 演示模式 | 'api' 在线模式
+  const mode = 'demo'
   const [page, setPage] = useState('home')
-  const [customers, setCustomers] = useState(() => (initialMode() === 'demo' ? generateCustomers() : []))
-  const [tasks, setTasks] = useState(() => (initialMode() === 'demo' ? DEFAULT_TASKS : []))
-  const [user, setUser] = useState(null)
-  const [authReady, setAuthReady] = useState(mode !== 'api') // 在线模式启动时校验既有 token
+  const [customers, setCustomers] = useState(generateCustomers)
+  const [tasks, setTasks] = useState(DEFAULT_TASKS)
   const [collectTask, setCollectTask] = useState(null)
   // 意向客户页待应用的行业筛选（采集完成后跳转时带上，页面消费后清空）
   const [customerFocus, setCustomerFocus] = useState(null)
@@ -62,101 +45,9 @@ export default function App() {
     for (const fn of liveSubs.current) fn(lead)
   }
 
-  const refreshData = async () => {
-    const [lr, tr] = await Promise.all([api('/api/leads?limit=800'), api('/api/tasks')])
-    setCustomers(lr.leads)
-    setTasks(tr.tasks)
-  }
-
-  // 在线模式：登录成功
-  const login = async (u) => {
-    setUser(u)
-    setAuthReady(true)
-    try {
-      await refreshData()
-    } catch (e) {
-      console.error('拉取数据失败:', e)
-    }
-  }
-
-  // 切回演示模式
-  const backToDemo = () => {
-    clearToken()
-    setUser(null)
-    setMode('demo')
-    try {
-      localStorage.setItem(MODE_KEY, 'demo')
-      const url = new URL(location.href)
-      url.searchParams.set('mode', 'demo')
-      history.replaceState(null, '', url)
-    } catch { /* ignore */ }
-    setCustomers(generateCustomers())
-    setTasks(DEFAULT_TASKS)
-    setPage('home')
-  }
-
-  const switchToApi = () => {
-    setMode('api')
-    try {
-      localStorage.setItem(MODE_KEY, 'api')
-      const url = new URL(location.href)
-      url.searchParams.set('mode', 'api')
-      history.replaceState(null, '', url)
-    } catch { /* ignore */ }
-    setCustomers([])
-    setTasks([])
-    setAuthReady(false)
-  }
-
-  // 在线模式启动：用既有 token 校验身份并拉数据
-  useEffect(() => {
-    if (mode !== 'api') return
-    let cancelled = false
-    const t = getToken()
-    if (!t) {
-      setAuthReady(true)
-      return
-    }
-    ;(async () => {
-      try {
-        const r = await api('/api/auth/me')
-        if (cancelled) return
-        setUser(r.user)
-        await refreshData()
-      } catch {
-        clearToken()
-      } finally {
-        if (!cancelled) setAuthReady(true)
-      }
-    })()
-    return () => {
-      cancelled = true
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [mode])
-
-  // 在线模式：WebSocket 实时推送（新线索 → 插入列表 + 触发动效）
-  useEffect(() => {
-    if (mode !== 'api' || !user) return
-    return wsConnect((msg) => {
-      if (msg.type === 'lead:new' && msg.lead) {
-        setCustomers((prev) => {
-          if (prev.some((c) => c.id === msg.lead.id)) return prev
-          const next = [msg.lead, ...prev]
-          return next.length > MAX_CUSTOMERS ? next.slice(0, MAX_CUSTOMERS) : next
-        })
-        notifyLive(msg.lead)
-      }
-    })
-  }, [mode, user])
-
   const ctx = useMemo(
     () => ({
       mode,
-      user,
-      login,
-      backToDemo,
-      switchToApi,
       // 注册实时线索监听（返回取消函数）
       onLive: (fn) => {
         liveSubs.current.add(fn)
@@ -302,28 +193,8 @@ export default function App() {
         })
       }
     }),
-    [customers, tasks, page, demoTask, presentOn, mode, user, customerFocus]
+    [customers, tasks, page, demoTask, presentOn, customerFocus]
   )
-
-  // 在线模式未登录 → 登录页；token 校验中 → 加载屏
-  if (mode === 'api' && (!user || !authReady)) {
-    if (!authReady) {
-      return (
-        <div className="login-wrap">
-          <div className="login-card" style={{ textAlign: 'center', padding: '60px 40px' }}>
-            <div className="brand-logo" style={{ margin: '0 auto 14px' }}>📡</div>
-            <div style={{ color: 'var(--ink-2)', fontSize: 15 }}>正在连接后端服务…</div>
-          </div>
-        </div>
-      )
-    }
-    // 登录页也需要上下文（login / backToDemo）
-    return (
-      <AppContext.Provider value={{ login, backToDemo, mode }}>
-        <Login />
-      </AppContext.Provider>
-    )
-  }
 
   return (
     <AppContext.Provider value={ctx}>
@@ -348,23 +219,6 @@ export default function App() {
             ))}
           </div>
           <div className="nav-right">
-            {mode === 'api' ? (
-              <button
-                className="nav-mode on"
-                onClick={backToDemo}
-                title="退出登录并切回演示模式"
-              >
-                🟢 {user ? user.username : 'demo'} · 退出
-              </button>
-            ) : (
-              <button
-                className="nav-mode"
-                onClick={switchToApi}
-                title="连接后端服务，使用真实数据库与实时采集"
-              >
-                连接后端
-              </button>
-            )}
             <button
               className={'nav-present' + (presentOn ? ' on' : '')}
               onClick={() => setPresentOn((v) => !v)}
